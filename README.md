@@ -27,7 +27,7 @@
 
 **Intro to Sequential Model in Keras**
 
-[04_a Gentle Introduction to Keras - Simple neural network(mlp).ipynb](https://nbviewer.jupyter.org/github/alireza-akhavan/SRU-deeplearning-workshop/blob/master/04_a%20Gentle%20Introduction%20to%20Keras%20-%20Simple%20neural%20network%28mlp%29.ipynb)
+[04_a Gentle Introduction to Keras - Simple neural network(mlp).ipynb](https://github.com/z-arabi/SRU-deeplearning-workshop/blob/master/04_a_Gentle_Introduction_to_Keras_Simple_neural_network(mlp).ipynb)
 
 **Overfitting and Dropout**
 
