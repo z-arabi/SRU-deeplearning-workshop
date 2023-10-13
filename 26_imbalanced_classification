@@ -1,0 +1,1205 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/z-arabi/SRU-deeplearning-workshop/blob/master/26_imbalanced_classification\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Puh7HKcVHyN7"
+      },
+      "source": [
+        "# Imbalanced classification: credit card fraud detection\n",
+        "\n",
+        "**Author:** [fchollet](https://twitter.com/fchollet)<br>\n",
+        "**Date created:** 2019/05/28<br>\n",
+        "**Last modified:** 2020/04/17<br>\n",
+        "**Description:** Demonstration of how to handle highly imbalanced classification problems."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "E0kX1ZYfHyOC"
+      },
+      "source": [
+        "## Introduction\n",
+        "\n",
+        "This example looks at the\n",
+        "[Kaggle Credit Card Fraud Detection](https://www.kaggle.com/mlg-ulb/creditcardfraud/)\n",
+        "dataset to demonstrate how\n",
+        "to train a classification model on data with highly imbalanced classes."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "B9HxxXJnHyOD"
+      },
+      "source": [
+        "## First, vectorize the CSV data"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!git clone https://github.com/z-arabi/SRU-deeplearning-workshop.git\n",
+        "%cd SRU-deeplearning-workshop"
+      ],
+      "metadata": {
+        "id": "8-tI_1szI3Jg",
+        "outputId": "8dac3584-0630-4079-ad1a-2ad2944bdc30",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 1,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Cloning into 'SRU-deeplearning-workshop'...\n",
+            "remote: Enumerating objects: 366, done.\u001b[K\n",
+            "remote: Counting objects: 100% (34/34), done.\u001b[K\n",
+            "remote: Compressing objects: 100% (22/22), done.\u001b[K\n",
+            "remote: Total 366 (delta 18), reused 16 (delta 12), pack-reused 332\u001b[K\n",
+            "Receiving objects: 100% (366/366), 107.04 MiB | 22.66 MiB/s, done.\n",
+            "Resolving deltas: 100% (169/169), done.\n",
+            "Updating files: 100% (54/54), done.\n",
+            "/content/SRU-deeplearning-workshop\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!unzip dataset/creaditcard.zip"
+      ],
+      "metadata": {
+        "id": "06T1i0KLI-4e",
+        "outputId": "2b3386d4-51b8-4255-a464-314f0de7ad55",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 4,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Archive:  dataset/creaditcard.zip\n",
+            "  inflating: creditcard.csv          \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 5,
+      "metadata": {
+        "id": "p8jQyJd-HyOE",
+        "outputId": "0b6425e7-43b8-4e6f-b7d8-82cd4645654c",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "HEADER: \"Time\",\"V1\",\"V2\",\"V3\",\"V4\",\"V5\",\"V6\",\"V7\",\"V8\",\"V9\",\"V10\",\"V11\",\"V12\",\"V13\",\"V14\",\"V15\",\"V16\",\"V17\",\"V18\",\"V19\",\"V20\",\"V21\",\"V22\",\"V23\",\"V24\",\"V25\",\"V26\",\"V27\",\"V28\",\"Amount\",\"Class\"\n",
+            "EXAMPLE FEATURES: [0.0, -1.3598071336738, -0.0727811733098497, 2.53634673796914, 1.37815522427443, -0.338320769942518, 0.462387777762292, 0.239598554061257, 0.0986979012610507, 0.363786969611213, 0.0907941719789316, -0.551599533260813, -0.617800855762348, -0.991389847235408, -0.311169353699879, 1.46817697209427, -0.470400525259478, 0.207971241929242, 0.0257905801985591, 0.403992960255733, 0.251412098239705, -0.018306777944153, 0.277837575558899, -0.110473910188767, 0.0669280749146731, 0.128539358273528, -0.189114843888824, 0.133558376740387, -0.0210530534538215, 149.62]\n",
+            "features.shape: (284807, 30)\n",
+            "targets.shape: (284807, 1)\n"
+          ]
+        }
+      ],
+      "source": [
+        "import csv\n",
+        "import numpy as np\n",
+        "\n",
+        "# Get the real data from https://www.kaggle.com/mlg-ulb/creditcardfraud/\n",
+        "fname = \"creditcard.csv\"\n",
+        "\n",
+        "all_features = []\n",
+        "all_targets = []\n",
+        "with open(fname) as f:\n",
+        "    for i, line in enumerate(f):\n",
+        "        if i == 0:\n",
+        "            print(\"HEADER:\", line.strip())\n",
+        "            continue  # Skip header\n",
+        "        fields = line.strip().split(\",\")\n",
+        "        all_features.append([float(v.replace('\"', \"\")) for v in fields[:-1]])\n",
+        "        all_targets.append([int(fields[-1].replace('\"', \"\"))])\n",
+        "        if i == 1:\n",
+        "            print(\"EXAMPLE FEATURES:\", all_features[-1])\n",
+        "\n",
+        "features = np.array(all_features, dtype=\"float32\")\n",
+        "targets = np.array(all_targets, dtype=\"uint8\")\n",
+        "print(\"features.shape:\", features.shape)\n",
+        "print(\"targets.shape:\", targets.shape)\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import pandas as pd\n",
+        "\n",
+        "df = pd.read_csv(fname)\n",
+        "df"
+      ],
+      "metadata": {
+        "id": "hWiRsLNRKAK2",
+        "outputId": "ae5abc5e-be03-41b6-ad43-d230d2a4da6a",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 492
+        }
+      },
+      "execution_count": 8,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "            Time         V1         V2        V3        V4        V5  \\\n",
+              "0            0.0  -1.359807  -0.072781  2.536347  1.378155 -0.338321   \n",
+              "1            0.0   1.191857   0.266151  0.166480  0.448154  0.060018   \n",
+              "2            1.0  -1.358354  -1.340163  1.773209  0.379780 -0.503198   \n",
+              "3            1.0  -0.966272  -0.185226  1.792993 -0.863291 -0.010309   \n",
+              "4            2.0  -1.158233   0.877737  1.548718  0.403034 -0.407193   \n",
+              "...          ...        ...        ...       ...       ...       ...   \n",
+              "284802  172786.0 -11.881118  10.071785 -9.834783 -2.066656 -5.364473   \n",
+              "284803  172787.0  -0.732789  -0.055080  2.035030 -0.738589  0.868229   \n",
+              "284804  172788.0   1.919565  -0.301254 -3.249640 -0.557828  2.630515   \n",
+              "284805  172788.0  -0.240440   0.530483  0.702510  0.689799 -0.377961   \n",
+              "284806  172792.0  -0.533413  -0.189733  0.703337 -0.506271 -0.012546   \n",
+              "\n",
+              "              V6        V7        V8        V9  ...       V21       V22  \\\n",
+              "0       0.462388  0.239599  0.098698  0.363787  ... -0.018307  0.277838   \n",
+              "1      -0.082361 -0.078803  0.085102 -0.255425  ... -0.225775 -0.638672   \n",
+              "2       1.800499  0.791461  0.247676 -1.514654  ...  0.247998  0.771679   \n",
+              "3       1.247203  0.237609  0.377436 -1.387024  ... -0.108300  0.005274   \n",
+              "4       0.095921  0.592941 -0.270533  0.817739  ... -0.009431  0.798278   \n",
+              "...          ...       ...       ...       ...  ...       ...       ...   \n",
+              "284802 -2.606837 -4.918215  7.305334  1.914428  ...  0.213454  0.111864   \n",
+              "284803  1.058415  0.024330  0.294869  0.584800  ...  0.214205  0.924384   \n",
+              "284804  3.031260 -0.296827  0.708417  0.432454  ...  0.232045  0.578229   \n",
+              "284805  0.623708 -0.686180  0.679145  0.392087  ...  0.265245  0.800049   \n",
+              "284806 -0.649617  1.577006 -0.414650  0.486180  ...  0.261057  0.643078   \n",
+              "\n",
+              "             V23       V24       V25       V26       V27       V28  Amount  \\\n",
+              "0      -0.110474  0.066928  0.128539 -0.189115  0.133558 -0.021053  149.62   \n",
+              "1       0.101288 -0.339846  0.167170  0.125895 -0.008983  0.014724    2.69   \n",
+              "2       0.909412 -0.689281 -0.327642 -0.139097 -0.055353 -0.059752  378.66   \n",
+              "3      -0.190321 -1.175575  0.647376 -0.221929  0.062723  0.061458  123.50   \n",
+              "4      -0.137458  0.141267 -0.206010  0.502292  0.219422  0.215153   69.99   \n",
+              "...          ...       ...       ...       ...       ...       ...     ...   \n",
+              "284802  1.014480 -0.509348  1.436807  0.250034  0.943651  0.823731    0.77   \n",
+              "284803  0.012463 -1.016226 -0.606624 -0.395255  0.068472 -0.053527   24.79   \n",
+              "284804 -0.037501  0.640134  0.265745 -0.087371  0.004455 -0.026561   67.88   \n",
+              "284805 -0.163298  0.123205 -0.569159  0.546668  0.108821  0.104533   10.00   \n",
+              "284806  0.376777  0.008797 -0.473649 -0.818267 -0.002415  0.013649  217.00   \n",
+              "\n",
+              "        Class  \n",
+              "0           0  \n",
+              "1           0  \n",
+              "2           0  \n",
+              "3           0  \n",
+              "4           0  \n",
+              "...       ...  \n",
+              "284802      0  \n",
+              "284803      0  \n",
+              "284804      0  \n",
+              "284805      0  \n",
+              "284806      0  \n",
+              "\n",
+              "[284807 rows x 31 columns]"
+            ],
+            "text/html": [
+              "\n",
+              "  <div id=\"df-952ff4a7-c35c-42f6-b92b-a925af13778d\" class=\"colab-df-container\">\n",
+              "    <div>\n",
+              "<style scoped>\n",
+              "    .dataframe tbody tr th:only-of-type {\n",
+              "        vertical-align: middle;\n",
+              "    }\n",
+              "\n",
+              "    .dataframe tbody tr th {\n",
+              "        vertical-align: top;\n",
+              "    }\n",
+              "\n",
+              "    .dataframe thead th {\n",
+              "        text-align: right;\n",
+              "    }\n",
+              "</style>\n",
+              "<table border=\"1\" class=\"dataframe\">\n",
+              "  <thead>\n",
+              "    <tr style=\"text-align: right;\">\n",
+              "      <th></th>\n",
+              "      <th>Time</th>\n",
+              "      <th>V1</th>\n",
+              "      <th>V2</th>\n",
+              "      <th>V3</th>\n",
+              "      <th>V4</th>\n",
+              "      <th>V5</th>\n",
+              "      <th>V6</th>\n",
+              "      <th>V7</th>\n",
+              "      <th>V8</th>\n",
+              "      <th>V9</th>\n",
+              "      <th>...</th>\n",
+              "      <th>V21</th>\n",
+              "      <th>V22</th>\n",
+              "      <th>V23</th>\n",
+              "      <th>V24</th>\n",
+              "      <th>V25</th>\n",
+              "      <th>V26</th>\n",
+              "      <th>V27</th>\n",
+              "      <th>V28</th>\n",
+              "      <th>Amount</th>\n",
+              "      <th>Class</th>\n",
+              "    </tr>\n",
+              "  </thead>\n",
+              "  <tbody>\n",
+              "    <tr>\n",
+              "      <th>0</th>\n",
+              "      <td>0.0</td>\n",
+              "      <td>-1.359807</td>\n",
+              "      <td>-0.072781</td>\n",
+              "      <td>2.536347</td>\n",
+              "      <td>1.378155</td>\n",
+              "      <td>-0.338321</td>\n",
+              "      <td>0.462388</td>\n",
+              "      <td>0.239599</td>\n",
+              "      <td>0.098698</td>\n",
+              "      <td>0.363787</td>\n",
+              "      <td>...</td>\n",
+              "      <td>-0.018307</td>\n",
+              "      <td>0.277838</td>\n",
+              "      <td>-0.110474</td>\n",
+              "      <td>0.066928</td>\n",
+              "      <td>0.128539</td>\n",
+              "      <td>-0.189115</td>\n",
+              "      <td>0.133558</td>\n",
+              "      <td>-0.021053</td>\n",
+              "      <td>149.62</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>1</th>\n",
+              "      <td>0.0</td>\n",
+              "      <td>1.191857</td>\n",
+              "      <td>0.266151</td>\n",
+              "      <td>0.166480</td>\n",
+              "      <td>0.448154</td>\n",
+              "      <td>0.060018</td>\n",
+              "      <td>-0.082361</td>\n",
+              "      <td>-0.078803</td>\n",
+              "      <td>0.085102</td>\n",
+              "      <td>-0.255425</td>\n",
+              "      <td>...</td>\n",
+              "      <td>-0.225775</td>\n",
+              "      <td>-0.638672</td>\n",
+              "      <td>0.101288</td>\n",
+              "      <td>-0.339846</td>\n",
+              "      <td>0.167170</td>\n",
+              "      <td>0.125895</td>\n",
+              "      <td>-0.008983</td>\n",
+              "      <td>0.014724</td>\n",
+              "      <td>2.69</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>2</th>\n",
+              "      <td>1.0</td>\n",
+              "      <td>-1.358354</td>\n",
+              "      <td>-1.340163</td>\n",
+              "      <td>1.773209</td>\n",
+              "      <td>0.379780</td>\n",
+              "      <td>-0.503198</td>\n",
+              "      <td>1.800499</td>\n",
+              "      <td>0.791461</td>\n",
+              "      <td>0.247676</td>\n",
+              "      <td>-1.514654</td>\n",
+              "      <td>...</td>\n",
+              "      <td>0.247998</td>\n",
+              "      <td>0.771679</td>\n",
+              "      <td>0.909412</td>\n",
+              "      <td>-0.689281</td>\n",
+              "      <td>-0.327642</td>\n",
+              "      <td>-0.139097</td>\n",
+              "      <td>-0.055353</td>\n",
+              "      <td>-0.059752</td>\n",
+              "      <td>378.66</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>3</th>\n",
+              "      <td>1.0</td>\n",
+              "      <td>-0.966272</td>\n",
+              "      <td>-0.185226</td>\n",
+              "      <td>1.792993</td>\n",
+              "      <td>-0.863291</td>\n",
+              "      <td>-0.010309</td>\n",
+              "      <td>1.247203</td>\n",
+              "      <td>0.237609</td>\n",
+              "      <td>0.377436</td>\n",
+              "      <td>-1.387024</td>\n",
+              "      <td>...</td>\n",
+              "      <td>-0.108300</td>\n",
+              "      <td>0.005274</td>\n",
+              "      <td>-0.190321</td>\n",
+              "      <td>-1.175575</td>\n",
+              "      <td>0.647376</td>\n",
+              "      <td>-0.221929</td>\n",
+              "      <td>0.062723</td>\n",
+              "      <td>0.061458</td>\n",
+              "      <td>123.50</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>4</th>\n",
+              "      <td>2.0</td>\n",
+              "      <td>-1.158233</td>\n",
+              "      <td>0.877737</td>\n",
+              "      <td>1.548718</td>\n",
+              "      <td>0.403034</td>\n",
+              "      <td>-0.407193</td>\n",
+              "      <td>0.095921</td>\n",
+              "      <td>0.592941</td>\n",
+              "      <td>-0.270533</td>\n",
+              "      <td>0.817739</td>\n",
+              "      <td>...</td>\n",
+              "      <td>-0.009431</td>\n",
+              "      <td>0.798278</td>\n",
+              "      <td>-0.137458</td>\n",
+              "      <td>0.141267</td>\n",
+              "      <td>-0.206010</td>\n",
+              "      <td>0.502292</td>\n",
+              "      <td>0.219422</td>\n",
+              "      <td>0.215153</td>\n",
+              "      <td>69.99</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>...</th>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "      <td>...</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>284802</th>\n",
+              "      <td>172786.0</td>\n",
+              "      <td>-11.881118</td>\n",
+              "      <td>10.071785</td>\n",
+              "      <td>-9.834783</td>\n",
+              "      <td>-2.066656</td>\n",
+              "      <td>-5.364473</td>\n",
+              "      <td>-2.606837</td>\n",
+              "      <td>-4.918215</td>\n",
+              "      <td>7.305334</td>\n",
+              "      <td>1.914428</td>\n",
+              "      <td>...</td>\n",
+              "      <td>0.213454</td>\n",
+              "      <td>0.111864</td>\n",
+              "      <td>1.014480</td>\n",
+              "      <td>-0.509348</td>\n",
+              "      <td>1.436807</td>\n",
+              "      <td>0.250034</td>\n",
+              "      <td>0.943651</td>\n",
+              "      <td>0.823731</td>\n",
+              "      <td>0.77</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>284803</th>\n",
+              "      <td>172787.0</td>\n",
+              "      <td>-0.732789</td>\n",
+              "      <td>-0.055080</td>\n",
+              "      <td>2.035030</td>\n",
+              "      <td>-0.738589</td>\n",
+              "      <td>0.868229</td>\n",
+              "      <td>1.058415</td>\n",
+              "      <td>0.024330</td>\n",
+              "      <td>0.294869</td>\n",
+              "      <td>0.584800</td>\n",
+              "      <td>...</td>\n",
+              "      <td>0.214205</td>\n",
+              "      <td>0.924384</td>\n",
+              "      <td>0.012463</td>\n",
+              "      <td>-1.016226</td>\n",
+              "      <td>-0.606624</td>\n",
+              "      <td>-0.395255</td>\n",
+              "      <td>0.068472</td>\n",
+              "      <td>-0.053527</td>\n",
+              "      <td>24.79</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>284804</th>\n",
+              "      <td>172788.0</td>\n",
+              "      <td>1.919565</td>\n",
+              "      <td>-0.301254</td>\n",
+              "      <td>-3.249640</td>\n",
+              "      <td>-0.557828</td>\n",
+              "      <td>2.630515</td>\n",
+              "      <td>3.031260</td>\n",
+              "      <td>-0.296827</td>\n",
+              "      <td>0.708417</td>\n",
+              "      <td>0.432454</td>\n",
+              "      <td>...</td>\n",
+              "      <td>0.232045</td>\n",
+              "      <td>0.578229</td>\n",
+              "      <td>-0.037501</td>\n",
+              "      <td>0.640134</td>\n",
+              "      <td>0.265745</td>\n",
+              "      <td>-0.087371</td>\n",
+              "      <td>0.004455</td>\n",
+              "      <td>-0.026561</td>\n",
+              "      <td>67.88</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>284805</th>\n",
+              "      <td>172788.0</td>\n",
+              "      <td>-0.240440</td>\n",
+              "      <td>0.530483</td>\n",
+              "      <td>0.702510</td>\n",
+              "      <td>0.689799</td>\n",
+              "      <td>-0.377961</td>\n",
+              "      <td>0.623708</td>\n",
+              "      <td>-0.686180</td>\n",
+              "      <td>0.679145</td>\n",
+              "      <td>0.392087</td>\n",
+              "      <td>...</td>\n",
+              "      <td>0.265245</td>\n",
+              "      <td>0.800049</td>\n",
+              "      <td>-0.163298</td>\n",
+              "      <td>0.123205</td>\n",
+              "      <td>-0.569159</td>\n",
+              "      <td>0.546668</td>\n",
+              "      <td>0.108821</td>\n",
+              "      <td>0.104533</td>\n",
+              "      <td>10.00</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>284806</th>\n",
+              "      <td>172792.0</td>\n",
+              "      <td>-0.533413</td>\n",
+              "      <td>-0.189733</td>\n",
+              "      <td>0.703337</td>\n",
+              "      <td>-0.506271</td>\n",
+              "      <td>-0.012546</td>\n",
+              "      <td>-0.649617</td>\n",
+              "      <td>1.577006</td>\n",
+              "      <td>-0.414650</td>\n",
+              "      <td>0.486180</td>\n",
+              "      <td>...</td>\n",
+              "      <td>0.261057</td>\n",
+              "      <td>0.643078</td>\n",
+              "      <td>0.376777</td>\n",
+              "      <td>0.008797</td>\n",
+              "      <td>-0.473649</td>\n",
+              "      <td>-0.818267</td>\n",
+              "      <td>-0.002415</td>\n",
+              "      <td>0.013649</td>\n",
+              "      <td>217.00</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "  </tbody>\n",
+              "</table>\n",
+              "<p>284807 rows × 31 columns</p>\n",
+              "</div>\n",
+              "    <div class=\"colab-df-buttons\">\n",
+              "\n",
+              "  <div class=\"colab-df-container\">\n",
+              "    <button class=\"colab-df-convert\" onclick=\"convertToInteractive('df-952ff4a7-c35c-42f6-b92b-a925af13778d')\"\n",
+              "            title=\"Convert this dataframe to an interactive table.\"\n",
+              "            style=\"display:none;\">\n",
+              "\n",
+              "  <svg xmlns=\"http://www.w3.org/2000/svg\" height=\"24px\" viewBox=\"0 -960 960 960\">\n",
+              "    <path d=\"M120-120v-720h720v720H120Zm60-500h600v-160H180v160Zm220 220h160v-160H400v160Zm0 220h160v-160H400v160ZM180-400h160v-160H180v160Zm440 0h160v-160H620v160ZM180-180h160v-160H180v160Zm440 0h160v-160H620v160Z\"/>\n",
+              "  </svg>\n",
+              "    </button>\n",
+              "\n",
+              "  <style>\n",
+              "    .colab-df-container {\n",
+              "      display:flex;\n",
+              "      gap: 12px;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-convert {\n",
+              "      background-color: #E8F0FE;\n",
+              "      border: none;\n",
+              "      border-radius: 50%;\n",
+              "      cursor: pointer;\n",
+              "      display: none;\n",
+              "      fill: #1967D2;\n",
+              "      height: 32px;\n",
+              "      padding: 0 0 0 0;\n",
+              "      width: 32px;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-convert:hover {\n",
+              "      background-color: #E2EBFA;\n",
+              "      box-shadow: 0px 1px 2px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);\n",
+              "      fill: #174EA6;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-buttons div {\n",
+              "      margin-bottom: 4px;\n",
+              "    }\n",
+              "\n",
+              "    [theme=dark] .colab-df-convert {\n",
+              "      background-color: #3B4455;\n",
+              "      fill: #D2E3FC;\n",
+              "    }\n",
+              "\n",
+              "    [theme=dark] .colab-df-convert:hover {\n",
+              "      background-color: #434B5C;\n",
+              "      box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.15);\n",
+              "      filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.3));\n",
+              "      fill: #FFFFFF;\n",
+              "    }\n",
+              "  </style>\n",
+              "\n",
+              "    <script>\n",
+              "      const buttonEl =\n",
+              "        document.querySelector('#df-952ff4a7-c35c-42f6-b92b-a925af13778d button.colab-df-convert');\n",
+              "      buttonEl.style.display =\n",
+              "        google.colab.kernel.accessAllowed ? 'block' : 'none';\n",
+              "\n",
+              "      async function convertToInteractive(key) {\n",
+              "        const element = document.querySelector('#df-952ff4a7-c35c-42f6-b92b-a925af13778d');\n",
+              "        const dataTable =\n",
+              "          await google.colab.kernel.invokeFunction('convertToInteractive',\n",
+              "                                                    [key], {});\n",
+              "        if (!dataTable) return;\n",
+              "\n",
+              "        const docLinkHtml = 'Like what you see? Visit the ' +\n",
+              "          '<a target=\"_blank\" href=https://colab.research.google.com/notebooks/data_table.ipynb>data table notebook</a>'\n",
+              "          + ' to learn more about interactive tables.';\n",
+              "        element.innerHTML = '';\n",
+              "        dataTable['output_type'] = 'display_data';\n",
+              "        await google.colab.output.renderOutput(dataTable, element);\n",
+              "        const docLink = document.createElement('div');\n",
+              "        docLink.innerHTML = docLinkHtml;\n",
+              "        element.appendChild(docLink);\n",
+              "      }\n",
+              "    </script>\n",
+              "  </div>\n",
+              "\n",
+              "\n",
+              "<div id=\"df-3b615fb0-e28b-4e5d-a518-a16dc66df76c\">\n",
+              "  <button class=\"colab-df-quickchart\" onclick=\"quickchart('df-3b615fb0-e28b-4e5d-a518-a16dc66df76c')\"\n",
+              "            title=\"Suggest charts.\"\n",
+              "            style=\"display:none;\">\n",
+              "\n",
+              "<svg xmlns=\"http://www.w3.org/2000/svg\" height=\"24px\"viewBox=\"0 0 24 24\"\n",
+              "     width=\"24px\">\n",
+              "    <g>\n",
+              "        <path d=\"M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z\"/>\n",
+              "    </g>\n",
+              "</svg>\n",
+              "  </button>\n",
+              "\n",
+              "<style>\n",
+              "  .colab-df-quickchart {\n",
+              "      --bg-color: #E8F0FE;\n",
+              "      --fill-color: #1967D2;\n",
+              "      --hover-bg-color: #E2EBFA;\n",
+              "      --hover-fill-color: #174EA6;\n",
+              "      --disabled-fill-color: #AAA;\n",
+              "      --disabled-bg-color: #DDD;\n",
+              "  }\n",
+              "\n",
+              "  [theme=dark] .colab-df-quickchart {\n",
+              "      --bg-color: #3B4455;\n",
+              "      --fill-color: #D2E3FC;\n",
+              "      --hover-bg-color: #434B5C;\n",
+              "      --hover-fill-color: #FFFFFF;\n",
+              "      --disabled-bg-color: #3B4455;\n",
+              "      --disabled-fill-color: #666;\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-quickchart {\n",
+              "    background-color: var(--bg-color);\n",
+              "    border: none;\n",
+              "    border-radius: 50%;\n",
+              "    cursor: pointer;\n",
+              "    display: none;\n",
+              "    fill: var(--fill-color);\n",
+              "    height: 32px;\n",
+              "    padding: 0;\n",
+              "    width: 32px;\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-quickchart:hover {\n",
+              "    background-color: var(--hover-bg-color);\n",
+              "    box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);\n",
+              "    fill: var(--button-hover-fill-color);\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-quickchart-complete:disabled,\n",
+              "  .colab-df-quickchart-complete:disabled:hover {\n",
+              "    background-color: var(--disabled-bg-color);\n",
+              "    fill: var(--disabled-fill-color);\n",
+              "    box-shadow: none;\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-spinner {\n",
+              "    border: 2px solid var(--fill-color);\n",
+              "    border-color: transparent;\n",
+              "    border-bottom-color: var(--fill-color);\n",
+              "    animation:\n",
+              "      spin 1s steps(1) infinite;\n",
+              "  }\n",
+              "\n",
+              "  @keyframes spin {\n",
+              "    0% {\n",
+              "      border-color: transparent;\n",
+              "      border-bottom-color: var(--fill-color);\n",
+              "      border-left-color: var(--fill-color);\n",
+              "    }\n",
+              "    20% {\n",
+              "      border-color: transparent;\n",
+              "      border-left-color: var(--fill-color);\n",
+              "      border-top-color: var(--fill-color);\n",
+              "    }\n",
+              "    30% {\n",
+              "      border-color: transparent;\n",
+              "      border-left-color: var(--fill-color);\n",
+              "      border-top-color: var(--fill-color);\n",
+              "      border-right-color: var(--fill-color);\n",
+              "    }\n",
+              "    40% {\n",
+              "      border-color: transparent;\n",
+              "      border-right-color: var(--fill-color);\n",
+              "      border-top-color: var(--fill-color);\n",
+              "    }\n",
+              "    60% {\n",
+              "      border-color: transparent;\n",
+              "      border-right-color: var(--fill-color);\n",
+              "    }\n",
+              "    80% {\n",
+              "      border-color: transparent;\n",
+              "      border-right-color: var(--fill-color);\n",
+              "      border-bottom-color: var(--fill-color);\n",
+              "    }\n",
+              "    90% {\n",
+              "      border-color: transparent;\n",
+              "      border-bottom-color: var(--fill-color);\n",
+              "    }\n",
+              "  }\n",
+              "</style>\n",
+              "\n",
+              "  <script>\n",
+              "    async function quickchart(key) {\n",
+              "      const quickchartButtonEl =\n",
+              "        document.querySelector('#' + key + ' button');\n",
+              "      quickchartButtonEl.disabled = true;  // To prevent multiple clicks.\n",
+              "      quickchartButtonEl.classList.add('colab-df-spinner');\n",
+              "      try {\n",
+              "        const charts = await google.colab.kernel.invokeFunction(\n",
+              "            'suggestCharts', [key], {});\n",
+              "      } catch (error) {\n",
+              "        console.error('Error during call to suggestCharts:', error);\n",
+              "      }\n",
+              "      quickchartButtonEl.classList.remove('colab-df-spinner');\n",
+              "      quickchartButtonEl.classList.add('colab-df-quickchart-complete');\n",
+              "    }\n",
+              "    (() => {\n",
+              "      let quickchartButtonEl =\n",
+              "        document.querySelector('#df-3b615fb0-e28b-4e5d-a518-a16dc66df76c button');\n",
+              "      quickchartButtonEl.style.display =\n",
+              "        google.colab.kernel.accessAllowed ? 'block' : 'none';\n",
+              "    })();\n",
+              "  </script>\n",
+              "</div>\n",
+              "    </div>\n",
+              "  </div>\n"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 8
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# ho many belongs to class1\n",
+        "np.sum(targets)"
+      ],
+      "metadata": {
+        "id": "gsYfoXyUKj0-",
+        "outputId": "fb7dd8d1-66e1-4e70-b432-3572394a4992",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 9,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "492"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 9
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "FCmNOByuHyOG"
+      },
+      "source": [
+        "## Prepare a validation set"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 10,
+      "metadata": {
+        "id": "GzqyB_q_HyOH",
+        "outputId": "239ec233-e836-4f4e-834c-599d341b79ee",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Number of training samples: 227846\n",
+            "Number of validation samples: 56961\n"
+          ]
+        }
+      ],
+      "source": [
+        "num_val_samples = int(len(features) * 0.2)\n",
+        "train_features = features[:-num_val_samples]\n",
+        "train_targets = targets[:-num_val_samples]\n",
+        "val_features = features[-num_val_samples:]\n",
+        "val_targets = targets[-num_val_samples:]\n",
+        "\n",
+        "print(\"Number of training samples:\", len(train_features))\n",
+        "print(\"Number of validation samples:\", len(val_features))\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "oIOu78v-HyOI"
+      },
+      "source": [
+        "## Analyze class imbalance in the targets"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print(train_targets.shape)"
+      ],
+      "metadata": {
+        "id": "ViGRN-cKK6XU",
+        "outputId": "02a25681-f23d-4ad3-fc8f-6f81f187b61b",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 11,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "(227846, 1)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 13,
+      "metadata": {
+        "id": "WS-KFMoSHyOJ",
+        "outputId": "3381f623-88c3-49db-e0c4-d1144f6e0e74",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "[227429    417]\n",
+            "Number of positive samples in training data: 417 (0.18% of total)\n"
+          ]
+        }
+      ],
+      "source": [
+        "# we use this for counting the data\n",
+        "counts = np.bincount(train_targets[:, 0])\n",
+        "print(counts)\n",
+        "print(\n",
+        "    \"Number of positive samples in training data: {} ({:.2f}% of total)\".format(\n",
+        "        counts[1], 100 * float(counts[1]) / len(train_targets)\n",
+        "    )\n",
+        ")\n",
+        "\n",
+        "# define class weights for that\n",
+        "weight_for_0 = 1.0 / counts[0]\n",
+        "weight_for_1 = 1.0 / counts[1]"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "aVsrhRvGHyOK"
+      },
+      "source": [
+        "## Normalize the data using training set statistics"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# the mean occurs in the index of axis > Mean(row[i]) > the other dimenion remains\n",
+        "mean = np.mean(train_features, axis=0)\n",
+        "mean.shape"
+      ],
+      "metadata": {
+        "id": "O2XajRWiLTT2",
+        "outputId": "7a8ddf67-bf13-4bf0-b7e4-5ac7e3f67641",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 14,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "(30,)"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 14
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 15,
+      "metadata": {
+        "id": "7oePmtPqHyOL"
+      },
+      "outputs": [],
+      "source": [
+        "mean = np.mean(train_features, axis=0)\n",
+        "train_features -= mean\n",
+        "val_features -= mean\n",
+        "std = np.std(train_features, axis=0)\n",
+        "train_features /= std\n",
+        "val_features /= std\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "N-ApmjkqHyOM"
+      },
+      "source": [
+        "## Build a binary classification model"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 16,
+      "metadata": {
+        "id": "bjaWzHDpHyOM",
+        "outputId": "bc3798c7-3de7-480e-a635-98326b336a4b",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Model: \"sequential\"\n",
+            "_________________________________________________________________\n",
+            " Layer (type)                Output Shape              Param #   \n",
+            "=================================================================\n",
+            " dense (Dense)               (None, 256)               7936      \n",
+            "                                                                 \n",
+            " dense_1 (Dense)             (None, 256)               65792     \n",
+            "                                                                 \n",
+            " dropout (Dropout)           (None, 256)               0         \n",
+            "                                                                 \n",
+            " dense_2 (Dense)             (None, 256)               65792     \n",
+            "                                                                 \n",
+            " dropout_1 (Dropout)         (None, 256)               0         \n",
+            "                                                                 \n",
+            " dense_3 (Dense)             (None, 1)                 257       \n",
+            "                                                                 \n",
+            "=================================================================\n",
+            "Total params: 139777 (546.00 KB)\n",
+            "Trainable params: 139777 (546.00 KB)\n",
+            "Non-trainable params: 0 (0.00 Byte)\n",
+            "_________________________________________________________________\n"
+          ]
+        }
+      ],
+      "source": [
+        "from tensorflow import keras\n",
+        "\n",
+        "model = keras.Sequential(\n",
+        "    [\n",
+        "        keras.layers.Dense(\n",
+        "            256, activation=\"relu\", input_shape=(train_features.shape[-1],)\n",
+        "        ),\n",
+        "        keras.layers.Dense(256, activation=\"relu\"),\n",
+        "        keras.layers.Dropout(0.3),\n",
+        "        keras.layers.Dense(256, activation=\"relu\"),\n",
+        "        keras.layers.Dropout(0.3),\n",
+        "        keras.layers.Dense(1, activation=\"sigmoid\"),\n",
+        "    ]\n",
+        ")\n",
+        "model.summary()\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "JBJoOpUsHyOM"
+      },
+      "source": [
+        "## Train the model with `class_weight` argument"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 17,
+      "metadata": {
+        "id": "odsAHgMLHyON",
+        "outputId": "844da686-b83e-4b39-ef3e-9bd35863a45d",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Epoch 1/30\n",
+            "112/112 - 7s - loss: 2.4303e-06 - fn: 48.0000 - fp: 31162.0000 - tn: 196267.0000 - tp: 369.0000 - precision: 0.0117 - recall: 0.8849 - val_loss: 0.0499 - val_fn: 12.0000 - val_fp: 381.0000 - val_tn: 56505.0000 - val_tp: 63.0000 - val_precision: 0.1419 - val_recall: 0.8400 - 7s/epoch - 67ms/step\n",
+            "Epoch 2/30\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.10/dist-packages/keras/src/engine/training.py:3000: UserWarning: You are saving your model as an HDF5 file via `model.save()`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')`.\n",
+            "  saving_api.save_model(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "112/112 - 1s - loss: 1.4347e-06 - fn: 37.0000 - fp: 7565.0000 - tn: 219864.0000 - tp: 380.0000 - precision: 0.0478 - recall: 0.9113 - val_loss: 0.1392 - val_fn: 7.0000 - val_fp: 2140.0000 - val_tn: 54746.0000 - val_tp: 68.0000 - val_precision: 0.0308 - val_recall: 0.9067 - 544ms/epoch - 5ms/step\n",
+            "Epoch 3/30\n",
+            "112/112 - 1s - loss: 1.1527e-06 - fn: 25.0000 - fp: 7067.0000 - tn: 220362.0000 - tp: 392.0000 - precision: 0.0526 - recall: 0.9400 - val_loss: 0.0618 - val_fn: 10.0000 - val_fp: 789.0000 - val_tn: 56097.0000 - val_tp: 65.0000 - val_precision: 0.0761 - val_recall: 0.8667 - 564ms/epoch - 5ms/step\n",
+            "Epoch 4/30\n",
+            "112/112 - 1s - loss: 1.1948e-06 - fn: 24.0000 - fp: 8564.0000 - tn: 218865.0000 - tp: 393.0000 - precision: 0.0439 - recall: 0.9424 - val_loss: 0.0390 - val_fn: 12.0000 - val_fp: 313.0000 - val_tn: 56573.0000 - val_tp: 63.0000 - val_precision: 0.1676 - val_recall: 0.8400 - 542ms/epoch - 5ms/step\n",
+            "Epoch 5/30\n",
+            "112/112 - 1s - loss: 1.1010e-06 - fn: 24.0000 - fp: 7617.0000 - tn: 219812.0000 - tp: 393.0000 - precision: 0.0491 - recall: 0.9424 - val_loss: 0.0802 - val_fn: 9.0000 - val_fp: 916.0000 - val_tn: 55970.0000 - val_tp: 66.0000 - val_precision: 0.0672 - val_recall: 0.8800 - 625ms/epoch - 6ms/step\n",
+            "Epoch 6/30\n",
+            "112/112 - 1s - loss: 1.0389e-06 - fn: 25.0000 - fp: 7323.0000 - tn: 220106.0000 - tp: 392.0000 - precision: 0.0508 - recall: 0.9400 - val_loss: 0.0331 - val_fn: 11.0000 - val_fp: 203.0000 - val_tn: 56683.0000 - val_tp: 64.0000 - val_precision: 0.2397 - val_recall: 0.8533 - 629ms/epoch - 6ms/step\n",
+            "Epoch 7/30\n",
+            "112/112 - 1s - loss: 9.7390e-07 - fn: 20.0000 - fp: 6747.0000 - tn: 220682.0000 - tp: 397.0000 - precision: 0.0556 - recall: 0.9520 - val_loss: 0.0611 - val_fn: 8.0000 - val_fp: 933.0000 - val_tn: 55953.0000 - val_tp: 67.0000 - val_precision: 0.0670 - val_recall: 0.8933 - 631ms/epoch - 6ms/step\n",
+            "Epoch 8/30\n",
+            "112/112 - 1s - loss: 1.0313e-06 - fn: 19.0000 - fp: 5579.0000 - tn: 221850.0000 - tp: 398.0000 - precision: 0.0666 - recall: 0.9544 - val_loss: 0.0817 - val_fn: 6.0000 - val_fp: 1297.0000 - val_tn: 55589.0000 - val_tp: 69.0000 - val_precision: 0.0505 - val_recall: 0.9200 - 755ms/epoch - 7ms/step\n",
+            "Epoch 9/30\n",
+            "112/112 - 1s - loss: 6.1322e-07 - fn: 14.0000 - fp: 5109.0000 - tn: 222320.0000 - tp: 403.0000 - precision: 0.0731 - recall: 0.9664 - val_loss: 0.0282 - val_fn: 10.0000 - val_fp: 441.0000 - val_tn: 56445.0000 - val_tp: 65.0000 - val_precision: 0.1285 - val_recall: 0.8667 - 819ms/epoch - 7ms/step\n",
+            "Epoch 10/30\n",
+            "112/112 - 1s - loss: 5.8016e-07 - fn: 8.0000 - fp: 5895.0000 - tn: 221534.0000 - tp: 409.0000 - precision: 0.0649 - recall: 0.9808 - val_loss: 0.0145 - val_fn: 12.0000 - val_fp: 189.0000 - val_tn: 56697.0000 - val_tp: 63.0000 - val_precision: 0.2500 - val_recall: 0.8400 - 747ms/epoch - 7ms/step\n",
+            "Epoch 11/30\n",
+            "112/112 - 1s - loss: 4.6122e-07 - fn: 5.0000 - fp: 3918.0000 - tn: 223511.0000 - tp: 412.0000 - precision: 0.0952 - recall: 0.9880 - val_loss: 0.0393 - val_fn: 7.0000 - val_fp: 714.0000 - val_tn: 56172.0000 - val_tp: 68.0000 - val_precision: 0.0870 - val_recall: 0.9067 - 651ms/epoch - 6ms/step\n",
+            "Epoch 12/30\n",
+            "112/112 - 1s - loss: 6.0384e-07 - fn: 10.0000 - fp: 5892.0000 - tn: 221537.0000 - tp: 407.0000 - precision: 0.0646 - recall: 0.9760 - val_loss: 0.0799 - val_fn: 5.0000 - val_fp: 2131.0000 - val_tn: 54755.0000 - val_tp: 70.0000 - val_precision: 0.0318 - val_recall: 0.9333 - 643ms/epoch - 6ms/step\n",
+            "Epoch 13/30\n",
+            "112/112 - 1s - loss: 5.1454e-07 - fn: 7.0000 - fp: 4915.0000 - tn: 222514.0000 - tp: 410.0000 - precision: 0.0770 - recall: 0.9832 - val_loss: 0.1042 - val_fn: 5.0000 - val_fp: 2483.0000 - val_tn: 54403.0000 - val_tp: 70.0000 - val_precision: 0.0274 - val_recall: 0.9333 - 608ms/epoch - 5ms/step\n",
+            "Epoch 14/30\n",
+            "112/112 - 1s - loss: 5.5295e-07 - fn: 7.0000 - fp: 6712.0000 - tn: 220717.0000 - tp: 410.0000 - precision: 0.0576 - recall: 0.9832 - val_loss: 0.0698 - val_fn: 8.0000 - val_fp: 1181.0000 - val_tn: 55705.0000 - val_tp: 67.0000 - val_precision: 0.0537 - val_recall: 0.8933 - 571ms/epoch - 5ms/step\n",
+            "Epoch 15/30\n",
+            "112/112 - 1s - loss: 3.4797e-07 - fn: 5.0000 - fp: 3449.0000 - tn: 223980.0000 - tp: 412.0000 - precision: 0.1067 - recall: 0.9880 - val_loss: 0.0193 - val_fn: 11.0000 - val_fp: 297.0000 - val_tn: 56589.0000 - val_tp: 64.0000 - val_precision: 0.1773 - val_recall: 0.8533 - 549ms/epoch - 5ms/step\n",
+            "Epoch 16/30\n",
+            "112/112 - 1s - loss: 2.7675e-07 - fn: 4.0000 - fp: 3323.0000 - tn: 224106.0000 - tp: 413.0000 - precision: 0.1105 - recall: 0.9904 - val_loss: 0.0600 - val_fn: 10.0000 - val_fp: 1551.0000 - val_tn: 55335.0000 - val_tp: 65.0000 - val_precision: 0.0402 - val_recall: 0.8667 - 534ms/epoch - 5ms/step\n",
+            "Epoch 17/30\n",
+            "112/112 - 1s - loss: 5.5481e-07 - fn: 7.0000 - fp: 6206.0000 - tn: 221223.0000 - tp: 410.0000 - precision: 0.0620 - recall: 0.9832 - val_loss: 0.0391 - val_fn: 9.0000 - val_fp: 726.0000 - val_tn: 56160.0000 - val_tp: 66.0000 - val_precision: 0.0833 - val_recall: 0.8800 - 637ms/epoch - 6ms/step\n",
+            "Epoch 18/30\n",
+            "112/112 - 1s - loss: 3.1776e-07 - fn: 3.0000 - fp: 3428.0000 - tn: 224001.0000 - tp: 414.0000 - precision: 0.1078 - recall: 0.9928 - val_loss: 0.0229 - val_fn: 10.0000 - val_fp: 455.0000 - val_tn: 56431.0000 - val_tp: 65.0000 - val_precision: 0.1250 - val_recall: 0.8667 - 573ms/epoch - 5ms/step\n",
+            "Epoch 19/30\n",
+            "112/112 - 1s - loss: 3.2954e-07 - fn: 4.0000 - fp: 3858.0000 - tn: 223571.0000 - tp: 413.0000 - precision: 0.0967 - recall: 0.9904 - val_loss: 0.0160 - val_fn: 10.0000 - val_fp: 313.0000 - val_tn: 56573.0000 - val_tp: 65.0000 - val_precision: 0.1720 - val_recall: 0.8667 - 662ms/epoch - 6ms/step\n",
+            "Epoch 20/30\n",
+            "112/112 - 1s - loss: 4.2436e-07 - fn: 5.0000 - fp: 4476.0000 - tn: 222953.0000 - tp: 412.0000 - precision: 0.0843 - recall: 0.9880 - val_loss: 0.0605 - val_fn: 9.0000 - val_fp: 1796.0000 - val_tn: 55090.0000 - val_tp: 66.0000 - val_precision: 0.0354 - val_recall: 0.8800 - 575ms/epoch - 5ms/step\n",
+            "Epoch 21/30\n",
+            "112/112 - 1s - loss: 5.7892e-07 - fn: 7.0000 - fp: 7851.0000 - tn: 219578.0000 - tp: 410.0000 - precision: 0.0496 - recall: 0.9832 - val_loss: 0.0332 - val_fn: 10.0000 - val_fp: 633.0000 - val_tn: 56253.0000 - val_tp: 65.0000 - val_precision: 0.0931 - val_recall: 0.8667 - 631ms/epoch - 6ms/step\n",
+            "Epoch 22/30\n",
+            "112/112 - 1s - loss: 5.0219e-07 - fn: 6.0000 - fp: 5992.0000 - tn: 221437.0000 - tp: 411.0000 - precision: 0.0642 - recall: 0.9856 - val_loss: 0.0468 - val_fn: 8.0000 - val_fp: 812.0000 - val_tn: 56074.0000 - val_tp: 67.0000 - val_precision: 0.0762 - val_recall: 0.8933 - 627ms/epoch - 6ms/step\n",
+            "Epoch 23/30\n",
+            "112/112 - 1s - loss: 3.8627e-07 - fn: 4.0000 - fp: 4293.0000 - tn: 223136.0000 - tp: 413.0000 - precision: 0.0878 - recall: 0.9904 - val_loss: 0.0190 - val_fn: 8.0000 - val_fp: 369.0000 - val_tn: 56517.0000 - val_tp: 67.0000 - val_precision: 0.1537 - val_recall: 0.8933 - 569ms/epoch - 5ms/step\n",
+            "Epoch 24/30\n",
+            "112/112 - 1s - loss: 3.3338e-07 - fn: 4.0000 - fp: 3585.0000 - tn: 223844.0000 - tp: 413.0000 - precision: 0.1033 - recall: 0.9904 - val_loss: 0.0316 - val_fn: 9.0000 - val_fp: 676.0000 - val_tn: 56210.0000 - val_tp: 66.0000 - val_precision: 0.0889 - val_recall: 0.8800 - 554ms/epoch - 5ms/step\n",
+            "Epoch 25/30\n",
+            "112/112 - 1s - loss: 2.7648e-07 - fn: 3.0000 - fp: 3041.0000 - tn: 224388.0000 - tp: 414.0000 - precision: 0.1198 - recall: 0.9928 - val_loss: 0.0264 - val_fn: 9.0000 - val_fp: 579.0000 - val_tn: 56307.0000 - val_tp: 66.0000 - val_precision: 0.1023 - val_recall: 0.8800 - 538ms/epoch - 5ms/step\n",
+            "Epoch 26/30\n",
+            "112/112 - 1s - loss: 2.3974e-07 - fn: 1.0000 - fp: 2970.0000 - tn: 224459.0000 - tp: 416.0000 - precision: 0.1229 - recall: 0.9976 - val_loss: 0.0280 - val_fn: 8.0000 - val_fp: 635.0000 - val_tn: 56251.0000 - val_tp: 67.0000 - val_precision: 0.0954 - val_recall: 0.8933 - 547ms/epoch - 5ms/step\n",
+            "Epoch 27/30\n",
+            "112/112 - 1s - loss: 1.4525e-07 - fn: 1.0000 - fp: 1812.0000 - tn: 225617.0000 - tp: 416.0000 - precision: 0.1867 - recall: 0.9976 - val_loss: 0.0111 - val_fn: 12.0000 - val_fp: 193.0000 - val_tn: 56693.0000 - val_tp: 63.0000 - val_precision: 0.2461 - val_recall: 0.8400 - 752ms/epoch - 7ms/step\n",
+            "Epoch 28/30\n",
+            "112/112 - 1s - loss: 3.0474e-07 - fn: 3.0000 - fp: 3338.0000 - tn: 224091.0000 - tp: 414.0000 - precision: 0.1103 - recall: 0.9928 - val_loss: 0.0191 - val_fn: 10.0000 - val_fp: 427.0000 - val_tn: 56459.0000 - val_tp: 65.0000 - val_precision: 0.1321 - val_recall: 0.8667 - 778ms/epoch - 7ms/step\n",
+            "Epoch 29/30\n",
+            "112/112 - 1s - loss: 3.0618e-07 - fn: 3.0000 - fp: 3033.0000 - tn: 224396.0000 - tp: 414.0000 - precision: 0.1201 - recall: 0.9928 - val_loss: 0.1267 - val_fn: 8.0000 - val_fp: 1560.0000 - val_tn: 55326.0000 - val_tp: 67.0000 - val_precision: 0.0412 - val_recall: 0.8933 - 809ms/epoch - 7ms/step\n",
+            "Epoch 30/30\n",
+            "112/112 - 1s - loss: 2.4389e-07 - fn: 1.0000 - fp: 2865.0000 - tn: 224564.0000 - tp: 416.0000 - precision: 0.1268 - recall: 0.9976 - val_loss: 0.0200 - val_fn: 9.0000 - val_fp: 428.0000 - val_tn: 56458.0000 - val_tp: 66.0000 - val_precision: 0.1336 - val_recall: 0.8800 - 621ms/epoch - 6ms/step\n"
+          ]
+        },
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "<keras.src.callbacks.History at 0x7a7f987630d0>"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 17
+        }
+      ],
+      "source": [
+        "metrics = [\n",
+        "    keras.metrics.FalseNegatives(name=\"fn\"),\n",
+        "    keras.metrics.FalsePositives(name=\"fp\"),\n",
+        "    keras.metrics.TrueNegatives(name=\"tn\"),\n",
+        "    keras.metrics.TruePositives(name=\"tp\"),\n",
+        "    keras.metrics.Precision(name=\"precision\"),\n",
+        "    keras.metrics.Recall(name=\"recall\"),\n",
+        "]\n",
+        "\n",
+        "model.compile(\n",
+        "    optimizer=keras.optimizers.Adam(1e-2), loss=\"binary_crossentropy\", metrics=metrics\n",
+        ")\n",
+        "\n",
+        "callbacks = [keras.callbacks.ModelCheckpoint(\"fraud_model_at_epoch_{epoch}.h5\")]\n",
+        "class_weight = {0: weight_for_0, 1: weight_for_1}\n",
+        "\n",
+        "model.fit(\n",
+        "    train_features,\n",
+        "    train_targets,\n",
+        "    batch_size=2048,\n",
+        "    epochs=30,\n",
+        "    verbose=2,\n",
+        "    callbacks=callbacks,\n",
+        "    validation_data=(val_features, val_targets),\n",
+        "    class_weight=class_weight,\n",
+        ")\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "jh5feKYOHyON"
+      },
+      "source": [
+        "## Conclusions\n",
+        "\n",
+        "At the end of training, out of 56,961 validation transactions, we are:\n",
+        "\n",
+        "- Correctly identifying 66 of them as fraudulent\n",
+        "- Missing 9 fraudulent transactions\n",
+        "- At the cost of incorrectly flagging 441 legitimate transactions\n",
+        "\n",
+        "In the real world, one would put an even higher weight on class 1,\n",
+        "so as to reflect that False Negatives are more costly than False Positives.\n",
+        "\n",
+        "Next time your credit card gets  declined in an online purchase -- this is why.\n",
+        "\n",
+        "Example available on HuggingFace.\n",
+        "\n",
+        "| Trained Model | Demo |\n",
+        "| :--: | :--: |\n",
+        "| [![Generic badge](https://img.shields.io/badge/🤗%20Model-Imbalanced%20Classification-black.svg)](https://huggingface.co/keras-io/imbalanced_classification) | [![Generic badge](https://img.shields.io/badge/🤗%20Spaces-Imbalanced%20Classification-black.svg)](https://huggingface.co/spaces/keras-io/Credit_Card_Fraud_Detection) |\n"
+      ]
+    }
+  ],
+  "metadata": {
+    "accelerator": "GPU",
+    "colab": {
+      "name": "imbalanced_classification",
+      "provenance": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "file_extension": ".py",
+      "mimetype": "text/x-python",
+      "name": "python",
+      "nbconvert_exporter": "python",
+      "pygments_lexer": "ipython3",
+      "version": "3.7.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
